@@ -1,5 +1,6 @@
 from itertools import count
 
+#Define the Square class
 class Square:
     _ids = count(1)  # Counter for generating unique IDs
     def __init__(self, top_left, bottom_right):
