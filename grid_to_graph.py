@@ -72,6 +72,11 @@ for square in grid_squares:
                  (square.top_left[0] < other_square.bottom_right[0] and square.bottom_right[0] > other_square.top_left[0]):
                 square.add_neighbor(other_square)
                 G.add_edge(square, other_square)
+                     
+for edge in G.edges():
+    start_point = edge[0].center
+    end_point = edge[1].center
+    plt.plot([start_point[1], end_point[1]], [start_point[0], end_point[0]], 'b-', linewidth=1)
 
 
 # Convert the graph to a JSON-friendly format
