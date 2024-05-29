@@ -3,3 +3,5 @@ This repository converts 2D occupancy grid into a quad tree and implements plann
 
 below image shows an occupancy grid converted to a quad tree:
 ![image](https://github.com/Nisarg236/path_planning_with_quad_trees/assets/71684502/52a81d1b-fc87-499e-8341-27946844bf47)
+
+Currently only the graph generation part is made, will build other functionalities to use the generated with move_base and update here.
