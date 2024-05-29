@@ -4,23 +4,62 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import json
 from itertools import count
-from square import Square
 
-# Load the occupancy grid PNG using OpenCV
-image_path = "map.png"
-occupancy_grid = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+class Square:
+    _ids = count(1)  # Counter for generating unique IDs
+    def __init__(self, top_left, bottom_right):
+        self.id = next(self._ids)
+        self.top_left = top_left
+        self.bottom_right = bottom_right
+        self.length = bottom_right[1] - top_left[1]
+        self.width = bottom_right[0] - top_left[0]
+        self.center = ((top_left[0] + bottom_right[0]) // 2, (top_left[1] + bottom_right[1]) // 2)
+        self.neighbors = []
 
-# Define parameters
-free_space_threshold = 240  # Assume any pixel value greater than this is free space
-square_size_threshold = 5  # Minimum size of a square
+    def add_neighbor(self, neighbor):
+        self.neighbors.append(neighbor)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'top_left': self.top_left,
+            'bottom_right': self.bottom_right,
+            'length': self.length,
+            'width': self.width,
+            'center': self.center,
+            'neighbors': [n.id for n in self.neighbors]
+        }
+
 
 # Function to check if a square area is free space
-def is_free_space(grid, top_left, bottom_right):
+def is_free_space(grid, top_left, bottom_right, free_space_threshold = 240):
+    """
+    Checks if the roi defined between top_left and bottom_right coordinates is a free space.
+
+    Parameters:
+    - grid: 2D array representing the grid.
+    - top_left: Tuple (x, y) representing the top-left corner of the subgrid.
+    - bottom_right: Tuple (x, y) representing the bottom-right corner of the subgrid.
+
+    Returns:
+    - Boolean: True if the subgrid is all free space, False otherwise.
+    """
     sub_grid = grid[top_left[0]:bottom_right[0], top_left[1]:bottom_right[1]]
     return np.all(sub_grid > free_space_threshold)
 
 # Function to recursively partition the grid
-def partition_grid(grid, x, y, size):
+def partition_grid(grid, x, y, size, square_size_threshold = 5):
+    """
+    Recursively divides the grid into four parts. If a part contains obstacles it further divied into four more parts.
+
+    Parameters:
+    - grid: 2D array representing the grid.
+    - x, y: Top-left coordinates of the current partition.
+    - size: Size of the current partition.
+
+    Returns:
+    - List of Square objects representing free spaces in the grid.
+    """
     if size < square_size_threshold:
         top_left = (x, y)
         bottom_right = (x + size, y + size)
@@ -42,53 +81,111 @@ def partition_grid(grid, x, y, size):
             quad3 = partition_grid(grid, x + new_size, y, new_size)
             quad4 = partition_grid(grid, x + new_size, y + new_size, new_size)
             return quad1 + quad2 + quad3 + quad4
+        
+def load_graph_from_json(json_file):
+    """
+    Loads the saved quad-tree graph JSON file and constructs a NetworkX graph.
 
-# Partition the grid
-grid_squares = partition_grid(occupancy_grid, 0, 0, occupancy_grid.shape[0])
+    Parameters:
+    - json_file: Path to the JSON file containing the graph data.
 
-# Create an RGB image for visualization
-visualization = cv2.cvtColor(occupancy_grid, cv2.COLOR_GRAY2RGB)
+    Returns:
+    - G: A NetworkX graph with Square nodes.
+    """
+    with open(json_file, 'r') as file:
+        graph_data = json.load(file)
+    nodes = graph_data['nodes']
+    G = nx.Graph()
+    node_dict = {}
+    for node_data in nodes:
+        node = Square(node_data['top_left'], node_data['bottom_right'])
+        node_dict[node_data['id']] = node
+        G.add_node(node)
+    for node_data in nodes:
+        node_id = node_data['id']
+        for neighbor_id in node_data['neighbors']:
+            G.add_edge(node_dict[node_id], node_dict[neighbor_id])
+    return G
 
-# Create a graph
-G = nx.Graph()
+def bresenham_line(x1, y1, x2, y2):
+    """Bresenham's line algorithm."""
+    points = []
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    sx = 1 if x1 < x2 else -1
+    sy = 1 if y1 < y2 else -1
+    err = dx - dy
+    
+    while True:
+        points.append((x1, y1))
+        if x1 == x2 and y1 == y2:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x1 += sx
+        if e2 < dx:
+            err += dx
+            y1 += sy
+    return points
 
-# Add nodes and edges to the graph
-for square in grid_squares:
-    G.add_node(square)
-    cv2.circle(visualization, (square.center[1], square.center[0]), 0, (0, 255, 0), -1)  # Draw a green node at the center
+def high_level_path_to_pixels(high_level_path, graph):
+    """
+    Converts a high-level path to a detailed pixel-level path. traces a line between nodes and return all pixels under the line. Use bresenham_line algorithm
 
-    # Draw the square in red
-    cv2.rectangle(visualization, square.top_left[::-1], square.bottom_right[::-1], (0, 0, 255), 1)
+    Parameters:
+    - high_level_path: List of nodes representing the high-level path.
+    - graph: A NetworkX graph where nodes have a 'center' attribute (tuple of (x, y) coordinates).
 
-    # Find and add neighbors
-    for other_square in grid_squares:
-        if square != other_square:
-            if (square.top_left[0] == other_square.bottom_right[0] or square.bottom_right[0] == other_square.top_left[0]) and \
-               (square.top_left[1] < other_square.bottom_right[1] and square.bottom_right[1] > other_square.top_left[1]):
-                square.add_neighbor(other_square)
-                G.add_edge(square, other_square)
-
-            elif (square.top_left[1] == other_square.bottom_right[1] or square.bottom_right[1] == other_square.top_left[1]) and \
-                 (square.top_left[0] < other_square.bottom_right[0] and square.bottom_right[0] > other_square.top_left[0]):
-                square.add_neighbor(other_square)
-                G.add_edge(square, other_square)
-                     
-for edge in G.edges():
-    start_point = edge[0].center
-    end_point = edge[1].center
-    plt.plot([start_point[1], end_point[1]], [start_point[0], end_point[0]], 'b-', linewidth=1)
+    Returns:
+    - pixel_path: List of (x, y) tuples representing the pixel-level path.
+    """
+    pixel_path = []
+    for i in range(len(high_level_path) - 1):
+        node1, node2 = high_level_path[i], high_level_path[i + 1]
+        x1, y1 = graph.nodes[node1]['center']
+        x2, y2 = graph.nodes[node2]['center']
+        pixels_between_nodes = bresenham_line(x1, y1, x2, y2)
+        pixel_path.extend(pixels_between_nodes)
+    return pixel_path
 
 
-# Convert the graph to a JSON-friendly format
-graph_data = {
-    'nodes': [square.to_dict() for square in G.nodes]
-}
+def quad_tree_to_graph(grid_squares, visualization):
+    """
+    Create a graph from grid squares and visualize the squares and their connections.
 
-# Write the graph to a JSON file
-with open('graph.json', 'w') as file:
-    json.dump(graph_data, file)
+    Parameters:
+    - grid_squares: List of grid square objects, each having `center`, `top_left`, `bottom_right`, and `add_neighbor` method.
+    - visualization: Image on which the visualization is drawn.
 
-# Display the image with nodes, edges, and grid squares
-plt.imshow(cv2.cvtColor(visualization, cv2.COLOR_BGR2RGB))
-plt.axis('off')
-plt.show()
+    Returns:
+    - G: A NetworkX graph with the grid squares as nodes and their connections as edges.
+    """
+    G = nx.Graph()
+
+    for square in grid_squares:
+        # Add node to the graph
+        G.add_node(square)
+        
+        # Draw a green circle at the center of the square
+        cv2.circle(visualization, (square.center[1], square.center[0]), 0, (0, 255, 0), -1)
+
+        # Draw the square in red
+        cv2.rectangle(visualization, square.top_left[::-1], square.bottom_right[::-1], (0, 0, 255), 1)
+
+        # Find and add neighbors
+        for other_square in grid_squares:
+            if square != other_square:
+                # Check if the squares are vertical neighbors
+                if (square.top_left[0] == other_square.bottom_right[0] or square.bottom_right[0] == other_square.top_left[0]) and \
+                   (square.top_left[1] < other_square.bottom_right[1] and square.bottom_right[1] > other_square.top_left[1]):
+                    square.add_neighbor(other_square)
+                    G.add_edge(square, other_square)
+
+                # Check if the squares are horizontal neighbors
+                elif (square.top_left[1] == other_square.bottom_right[1] or square.bottom_right[1] == other_square.top_left[1]) and \
+                     (square.top_left[0] < other_square.bottom_right[0] and square.bottom_right[0] > other_square.top_left[0]):
+                    square.add_neighbor(other_square)
+                    G.add_edge(square, other_square)
+    
+    return G
