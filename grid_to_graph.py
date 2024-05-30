@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import json
 from itertools import count
+import math
 
 class Square:
     _ids = count(1)  # Counter for generating unique IDs
@@ -47,6 +48,7 @@ def is_free_space(grid, top_left, bottom_right, free_space_threshold = 240):
     sub_grid = grid[top_left[0]:bottom_right[0], top_left[1]:bottom_right[1]]
     return np.all(sub_grid > free_space_threshold)
 
+
 # Function to recursively partition the grid
 def partition_grid(grid, x, y, size, square_size_threshold = 5):
     """
@@ -81,7 +83,8 @@ def partition_grid(grid, x, y, size, square_size_threshold = 5):
             quad3 = partition_grid(grid, x + new_size, y, new_size)
             quad4 = partition_grid(grid, x + new_size, y + new_size, new_size)
             return quad1 + quad2 + quad3 + quad4
-        
+
+# Function to load the graph from a JSON file
 def load_graph_from_json(json_file):
     """
     Loads the saved quad-tree graph JSON file and constructs a NetworkX graph.
@@ -94,18 +97,14 @@ def load_graph_from_json(json_file):
     """
     with open(json_file, 'r') as file:
         graph_data = json.load(file)
-    nodes = graph_data['nodes']
     G = nx.Graph()
-    node_dict = {}
-    for node_data in nodes:
-        node = Square(node_data['top_left'], node_data['bottom_right'])
-        node_dict[node_data['id']] = node
-        G.add_node(node)
-    for node_data in nodes:
-        node_id = node_data['id']
+    for node_data in graph_data['nodes']:
+        G.add_node(node_data['id'], center=tuple(node_data['center']))  # Ensure center is a tuple
+        print(tuple(node_data['center']))
         for neighbor_id in node_data['neighbors']:
-            G.add_edge(node_dict[node_id], node_dict[neighbor_id])
+            G.add_edge(node_data['id'], neighbor_id)
     return G
+    
 
 def bresenham_line(x1, y1, x2, y2):
     """Bresenham's line algorithm."""
@@ -128,26 +127,6 @@ def bresenham_line(x1, y1, x2, y2):
             err += dx
             y1 += sy
     return points
-
-def high_level_path_to_pixels(high_level_path, graph):
-    """
-    Converts a high-level path to a detailed pixel-level path. traces a line between nodes and return all pixels under the line. Use bresenham_line algorithm
-
-    Parameters:
-    - high_level_path: List of nodes representing the high-level path.
-    - graph: A NetworkX graph where nodes have a 'center' attribute (tuple of (x, y) coordinates).
-
-    Returns:
-    - pixel_path: List of (x, y) tuples representing the pixel-level path.
-    """
-    pixel_path = []
-    for i in range(len(high_level_path) - 1):
-        node1, node2 = high_level_path[i], high_level_path[i + 1]
-        x1, y1 = graph.nodes[node1]['center']
-        x2, y2 = graph.nodes[node2]['center']
-        pixels_between_nodes = bresenham_line(x1, y1, x2, y2)
-        pixel_path.extend(pixels_between_nodes)
-    return pixel_path
 
 
 def quad_tree_to_graph(grid_squares, visualization):
@@ -189,3 +168,74 @@ def quad_tree_to_graph(grid_squares, visualization):
                     G.add_edge(square, other_square)
     
     return G
+
+
+def euclidean(p1, p2):
+    """Calculates the Euclidean distance between two points."""
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+
+
+def high_level_path_to_pixels(high_level_path, graph):
+    """
+    Converts a high-level path to a detailed pixel-level path. Traces a line between nodes and returns all pixels under the line.
+    
+    Parameters:
+    - high_level_path: List of nodes representing the high-level path.
+    - graph: A NetworkX graph where nodes have a 'center' attribute (tuple of (x, y) coordinates).
+
+    Returns:
+    - pixel_path: List of (x, y) tuples representing the pixel-level path.
+    """
+    pixel_path = []
+    
+    for i in range(len(high_level_path) - 1):
+        node1, node2 = high_level_path[i], high_level_path[i + 1]
+        x1, y1 = graph.nodes[node1]['center']
+        x2, y2 = graph.nodes[node2]['center']
+        pixels_between_nodes = bresenham_line(x1, y1, x2, y2)
+        pixel_path.extend(pixels_between_nodes)
+    return pixel_path
+
+
+def find_nearest_high_level_node(graph, pixel):
+    """
+    Finds the nearest high-level node in the graph to a given pixel.
+    
+    Parameters:
+    - graph: A NetworkX graph where nodes have a 'center' attribute (tuple of (x, y) coordinates).
+    - pixel: A tuple (x, y) representing the pixel coordinates.
+    
+    Returns:
+    - nearest_node: The node in the graph that is closest to the given pixel.
+    """
+    min_distance = float('inf')
+    nearest_node = None
+    # Iterate over all nodes and their data in the graph
+    for node, data in graph.nodes(data=True):
+        # Calculate the Euclidean distance between the pixel and the node's center
+        distance = euclidean(pixel, data['center'])
+        # Update the nearest node if the current distance is smaller
+        if distance < min_distance:
+            min_distance = distance
+            nearest_node = node
+    return nearest_node
+
+
+def find_high_level_path(G, start_pixel, end_pixel):
+    """
+    Finds a high-level path in the graph from a start pixel to an end pixel.
+    
+    Parameters:
+    - G: A NetworkX graph where nodes have a 'center' attribute (tuple of (x, y) coordinates).
+    - start_pixel: A tuple (x, y) representing the start pixel coordinates.
+    - end_pixel: A tuple (x, y) representing the end pixel coordinates.
+    
+    Returns:
+    - path: A list of nodes representing the high-level path from the start node to the end node.
+    """
+    # Find the nearest high-level node to the start pixel
+    start_node = find_nearest_high_level_node(G, start_pixel)
+    # Find the nearest high-level node to the end pixel
+    end_node = find_nearest_high_level_node(G, end_pixel)
+    # Use A* algorithm to find the shortest path between the start and end nodes
+    return nx.astar_path(G, start_node, end_node, weight="cost")
