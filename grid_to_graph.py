@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import json
 from itertools import count
-import numpy as np
 
 class Square:
     _ids = count(1)  # Counter for generating unique IDs
