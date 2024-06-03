@@ -8,7 +8,7 @@ from grid_to_graph import *
 
 class qtreePlanner:
     def __init__(self):
-        rospy.init_node('custom_global_planner')
+        rospy.init_node('qtree_global_planner')
 
         # Parameters
         self.json_file = rospy.get_param('~graph_json_file', 'graph.json')
