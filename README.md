@@ -1,5 +1,5 @@
 # path_planning_with_quad_trees
-This repository converts 2D occupancy grid into a quad tree and implements planning algorithms for mobile robots using the generated quad tree. Planning works much faster on these because each square represents an area with free space and the neighbouring squares are already connected in a graph.
+This repository converts 2D occupancy grid into a quad tree and implements planning algorithms for mobile robots using the generated quad tree. Planning works much faster on these because each square represents an area with free space so we can directly trace the path without checking for obstacles inside a square, and the neighbouring squares are already connected in a graph.
 
 below image shows an occupancy grid converted to a quad tree:
 
